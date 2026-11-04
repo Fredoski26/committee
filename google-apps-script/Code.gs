@@ -3,32 +3,15 @@
  * 
  * Target Form: CLASS OF 1990 - ELECTORAL COMMITTEE APPLICATION FORM
  * Target Sheet: https://docs.google.com/spreadsheets/d/1v5DW23IHEmCI553iCmcjqVJGDHShNGHs1qitFt6uDnA
- * 
- * Features:
- * - Real-time onFormSubmit installable trigger for instant transmission
- * - Multi-form identification (formId, formName, sheetUrl)
- * - Captures text, paragraph, multiple choice, checkboxes, dropdowns, dates
- * - Exponential backoff retry mechanism (up to 3 retries)
- * - Safe duplicate prevention with unique submission identifiers
- * - One-click "Sync Historical Responses" menu item
- * - Test Webhook function
  */
 
-// ==========================================
-// CONFIGURATION (Default or ScriptProperties)
-// ==========================================
 var CONFIG = {
-  // Update this to your deployed domain or ngrok/localtunnel URL for local testing
-  DEFAULT_WEBHOOK_URL: 'https://YOUR_DOMAIN.com/api/webhooks/google-forms',
+  DEFAULT_WEBHOOK_URL: 'https://committee-psi.vercel.app/api/webhooks/google-forms',
   DEFAULT_WEBHOOK_SECRET: 'gforms_sec_7f9a8d4c2b1e0f3a5e8c',
   DEFAULT_FORM_ID: 'class-of-1990-electoral',
   DEFAULT_FORM_NAME: 'CLASS OF 1990 - ELECTORAL COMMITTEE APPLICATION FORM'
 };
 
-/**
- * Retrieve configuration from Script Properties (recommended for security)
- * or fallback to default configuration above.
- */
 function getSettings() {
   var props = PropertiesService.getScriptProperties();
   return {
@@ -39,12 +22,9 @@ function getSettings() {
   };
 }
 
-/**
- * Custom Menu added to Google Sheets UI for easy administrative management
- */
 function onOpen() {
-  var ui = SpreadsheetApp.getUi();
-  ui.createMenu('🚀 Form Dashboard')
+  SpreadsheetApp.getUi()
+    .createMenu('🚀 Form Dashboard')
     .addItem('Test Webhook Connection', 'testWebhookConnection')
     .addItem('Install Automatic Trigger', 'installTrigger')
     .addSeparator()
@@ -54,7 +34,6 @@ function onOpen() {
 
 /**
  * Triggered automatically on every new form submission
- * Attach this to an installable "On form submit" trigger in the spreadsheet.
  */
 function onFormSubmit(e) {
   var settings = getSettings();
@@ -73,40 +52,40 @@ function onFormSubmit(e) {
 }
 
 /**
- * Builds the structured JSON payload from the Google Sheets form submission event
+ * Builds the structured JSON payload from the form submission event
  */
 function buildPayloadFromEvent(e, settings) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet();
-  var sheetUrl = sheet.getUrl();
+  var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetUrl = spreadsheet ? spreadsheet.getUrl() : '';
   var timestamp = new Date().toISOString();
-  var externalSubmissionId = 'sub_' + new Date().getTime() + '_' + Math.floor(Math.random() * 10000);
+  var externalSubmissionId = 'sub_' + new Date().getTime();
   var answers = [];
   var submitterEmail = null;
   var submitterName = null;
   var submitterPhone = null;
 
-  // 1. If triggered by Google Forms directly (Form trigger)
+  // 1. Triggered directly by Google Form
   if (e && e.response) {
     var response = e.response;
     externalSubmissionId = response.getId() || externalSubmissionId;
-    timestamp = response.getTimestamp().toISOString();
+    try {
+      timestamp = response.getTimestamp().toISOString();
+    } catch (tErr) {
+      timestamp = new Date().toISOString();
+    }
     submitterEmail = response.getRespondentEmail() || null;
 
     var itemResponses = response.getItemResponses();
     for (var i = 0; i < itemResponses.length; i++) {
       var itemResp = itemResponses[i];
-      var questionTitle = itemResp.getItem().getTitle();
-      var responseValue = itemResp.getResponse();
-      var itemType = itemResp.getItem().getType().toString();
-
       answers.push({
-        question: questionTitle,
-        answer: responseValue,
-        type: itemType.toLowerCase()
+        question: itemResp.getItem().getTitle(),
+        answer: itemResp.getResponse(),
+        type: itemResp.getItem().getType().toString().toLowerCase()
       });
     }
   }
-  // 2. If triggered by Google Sheets linked to Google Form (Spreadsheet trigger)
+  // 2. Triggered by Google Sheets linked to Google Form
   else if (e && e.namedValues) {
     var namedValues = e.namedValues;
     var keys = Object.keys(namedValues);
@@ -117,7 +96,9 @@ function buildPayloadFromEvent(e, settings) {
       var val = valArray ? valArray.join(', ') : '';
 
       if (key === 'Timestamp') {
-        if (val) timestamp = new Date(val).toISOString();
+        try {
+          if (val) timestamp = new Date(val).toISOString();
+        } catch (tErr) {}
         continue;
       }
 
@@ -129,13 +110,13 @@ function buildPayloadFromEvent(e, settings) {
     }
 
     if (e.range) {
-      externalSubmissionId = 'row_' + e.range.getRow() + '_' + new Date(timestamp).getTime();
+      externalSubmissionId = 'row_' + e.range.getRow() + '_' + new Date().getTime();
     }
   }
   // 3. Fallback: Parse active row from sheet
   else {
-    var activeSheet = SpreadsheetApp.getActiveSheet();
-    var row = activeSheet.getActiveRange().getRow();
+    var activeSheet = spreadsheet.getActiveSheet();
+    var row = (e && e.range) ? e.range.getRow() : activeSheet.getLastRow();
     var headers = activeSheet.getRange(1, 1, 1, activeSheet.getLastColumn()).getValues()[0];
     var values = activeSheet.getRange(row, 1, 1, activeSheet.getLastColumn()).getValues()[0];
 
@@ -145,7 +126,9 @@ function buildPayloadFromEvent(e, settings) {
       var cellVal = values[h];
 
       if (header === 'Timestamp' && cellVal) {
-        timestamp = new Date(cellVal).toISOString();
+        try {
+          timestamp = new Date(cellVal).toISOString();
+        } catch (tErr) {}
       } else {
         answers.push({
           question: header,
@@ -154,13 +137,13 @@ function buildPayloadFromEvent(e, settings) {
         });
       }
     }
-    externalSubmissionId = 'row_' + row + '_' + new Date(timestamp).getTime();
+    externalSubmissionId = 'row_' + row + '_' + new Date().getTime();
   }
 
-  // Auto-detect submitter info from answers if available
+  // Auto-detect submitter info from answers
   for (var k = 0; k < answers.length; k++) {
     var q = answers[k].question.toLowerCase();
-    var a = answers[k].answer ? String(answers[k].answer) : '';
+    var a = answers[k].answer ? String(answers[k].answer).trim() : '';
     if (!submitterName && (q.indexOf('full name') !== -1 || q.indexOf("contestant's name") !== -1 || q === 'name')) {
       submitterName = a;
     }
@@ -184,7 +167,7 @@ function buildPayloadFromEvent(e, settings) {
     answers: answers,
     metadata: {
       source: 'Google Apps Script',
-      version: '1.0.0'
+      version: '1.1.0'
     }
   };
 }
@@ -218,7 +201,6 @@ function sendPayloadWithRetry(payload, settings) {
         return true;
       }
 
-      // If client error (4xx other than 429), retrying won't help
       if (statusCode >= 400 && statusCode < 500 && statusCode !== 429) {
         Logger.log('Client error ' + statusCode + ', aborting retry.');
         return false;
@@ -230,7 +212,7 @@ function sendPayloadWithRetry(payload, settings) {
 
     if (attempt < maxRetries) {
       Utilities.sleep(delayMs);
-      delayMs *= 2; // exponential backoff
+      delayMs *= 2;
     }
   }
 
@@ -239,11 +221,12 @@ function sendPayloadWithRetry(payload, settings) {
 }
 
 /**
- * Updates a "Sync Status" column in Google Sheets to track delivered rows
+ * Updates a "Sync Status" column in Google Sheets
  */
 function updateSyncStatusInSheet(rowNum, status) {
   try {
-    var sheet = SpreadsheetApp.getActiveSheet();
+    var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = spreadsheet.getActiveSheet();
     var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
     var statusCol = -1;
 
@@ -272,7 +255,9 @@ function updateSyncStatusInSheet(rowNum, status) {
 function syncHistoricalResponses() {
   var ui = SpreadsheetApp.getUi();
   var settings = getSettings();
-  var sheet = SpreadsheetApp.getActiveSheet();
+  var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = spreadsheet.getActiveSheet();
+  var sheetUrl = spreadsheet.getUrl();
   var lastRow = sheet.getLastRow();
   var lastCol = sheet.getLastColumn();
 
@@ -291,29 +276,51 @@ function syncHistoricalResponses() {
     var actualRowNum = r + 2;
     var answers = [];
     var timestamp = new Date().toISOString();
+    var submitterName = null;
+    var submitterEmail = null;
+    var submitterPhone = null;
 
     for (var c = 0; c < headers.length; c++) {
-      var header = headers[c];
+      var header = String(headers[c] || '').trim();
       if (!header || header === 'Sync Status') continue;
       var cellVal = rowValues[c];
 
       if (header === 'Timestamp' && cellVal) {
-        timestamp = new Date(cellVal).toISOString();
+        try {
+          timestamp = new Date(cellVal).toISOString();
+        } catch (e) {
+          timestamp = new Date().toISOString();
+        }
       } else {
         answers.push({
           question: header,
           answer: cellVal,
           type: 'text'
         });
+
+        var qLower = header.toLowerCase();
+        var valStr = cellVal ? String(cellVal).trim() : '';
+        if (!submitterName && (qLower.indexOf('full name') !== -1 || qLower.indexOf("contestant's name") !== -1 || qLower === 'name')) {
+          submitterName = valStr;
+        }
+        if (!submitterEmail && (qLower.indexOf('email') !== -1)) {
+          submitterEmail = valStr;
+        }
+        if (!submitterPhone && (qLower.indexOf('phone') !== -1 || qLower.indexOf('whatsapp') !== -1)) {
+          submitterPhone = valStr;
+        }
       }
     }
 
     var payload = {
       formId: settings.formId,
       formName: settings.formName,
-      sheetUrl: sheet.getUrl(),
+      sheetUrl: sheetUrl,
       externalSubmissionId: 'row_' + actualRowNum + '_' + new Date(timestamp).getTime(),
       submittedAt: timestamp,
+      submitterName: submitterName,
+      submitterEmail: submitterEmail,
+      submitterPhone: submitterPhone,
       answers: answers,
       metadata: { source: 'Google Sheets Bulk Sync', row: actualRowNum }
     };
@@ -328,7 +335,7 @@ function syncHistoricalResponses() {
     }
   }
 
-  ui.alert('Sync Finished', 'Synced ' + syncedCount + ' submissions successfully. ' + (failedCount > 0 ? (failedCount + ' failed.') : ''), ui.ButtonSet.OK);
+  ui.alert('Sync Finished', 'Successfully synced ' + syncedCount + ' submissions to dashboard! ' + (failedCount > 0 ? (failedCount + ' failed.') : ''), ui.ButtonSet.OK);
 }
 
 /**
@@ -379,21 +386,21 @@ function testWebhookConnection() {
  * Automatically creates the installable trigger
  */
 function installTrigger() {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet();
-  var triggers = ScriptApp.getUserTriggers(sheet);
+  var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  var triggers = ScriptApp.getUserTriggers(spreadsheet);
 
-  // Check if trigger already exists
+  // Remove any old/broken triggers first
   for (var i = 0; i < triggers.length; i++) {
     if (triggers[i].getHandlerFunction() === 'onFormSubmit') {
-      SpreadsheetApp.getUi().alert('Trigger Already Installed', 'The onFormSubmit trigger is already active on this spreadsheet.', SpreadsheetApp.getUi().ButtonSet.OK);
-      return;
+      ScriptApp.deleteTrigger(triggers[i]);
     }
   }
 
+  // Create fresh installable trigger
   ScriptApp.newTrigger('onFormSubmit')
-    .forSpreadsheet(sheet)
+    .forSpreadsheet(spreadsheet)
     .onFormSubmit()
     .create();
 
-  SpreadsheetApp.getUi().alert('✅ Trigger Installed!', 'Every new Google Form response submitted to this sheet will now automatically be forwarded to your dashboard.', SpreadsheetApp.getUi().ButtonSet.OK);
+  SpreadsheetApp.getUi().alert('✅ Trigger Successfully Installed!', 'Every time a Google Form is submitted to this spreadsheet, it will now automatically send the response to your dashboard.', SpreadsheetApp.getUi().ButtonSet.OK);
 }

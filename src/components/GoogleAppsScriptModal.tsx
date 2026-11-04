@@ -159,7 +159,9 @@ function updateSyncStatusInSheet(rowNum, status) {
 function syncHistoricalResponses() {
   var ui = SpreadsheetApp.getUi();
   var settings = getSettings();
-  var sheet = SpreadsheetApp.getActiveSheet();
+  var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = spreadsheet.getActiveSheet();
+  var sheetUrl = spreadsheet.getUrl();
   var lastRow = sheet.getLastRow();
   var lastCol = sheet.getLastColumn();
   if (lastRow <= 1) return ui.alert('No responses found to sync.');
