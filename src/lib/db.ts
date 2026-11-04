@@ -46,8 +46,8 @@ export async function dbQuery<T = any>(sql: string, params: any[] = []): Promise
     const sqlClient = getNeonClient();
     let paramIndex = 1;
     const pgSql = sql.replace(/\?/g, () => `$${paramIndex++}`);
-    const rows = await sqlClient(pgSql, params);
-    return rows as T[];
+    const rows = await sqlClient.query(pgSql, params);
+    return (Array.isArray(rows) ? rows : (rows as any)?.rows || []) as T[];
   } else {
     const db = getSqliteDb();
     const stmt = db.prepare(sql);
@@ -70,8 +70,9 @@ export async function dbExec(sql: string, params: any[] = []): Promise<{ changes
     const sqlClient = getNeonClient();
     let paramIndex = 1;
     const pgSql = sql.replace(/\?/g, () => `$${paramIndex++}`);
-    const res = await sqlClient(pgSql, params);
-    return { changes: Array.isArray(res) ? res.length : 1 };
+    const res = await sqlClient.query(pgSql, params, { fullResults: true });
+    const changes = res?.rowCount ?? (Array.isArray(res) ? res.length : 1);
+    return { changes };
   } else {
     const db = getSqliteDb();
     const stmt = db.prepare(sql);
@@ -86,7 +87,7 @@ async function ensureInitialized() {
 
   if (isPostgres) {
     const sqlClient = getNeonClient();
-    await sqlClient(`
+    await sqlClient.query(`
       CREATE TABLE IF NOT EXISTS forms (
         id TEXT PRIMARY KEY,
         form_id TEXT UNIQUE NOT NULL,
@@ -147,7 +148,7 @@ async function ensureInitialized() {
 
     // Always ensure default forms exist in Postgres
     const now = new Date().toISOString();
-    await sqlClient(`
+    await sqlClient.query(`
       INSERT INTO forms (id, form_id, name, description, sheet_url, form_url, status, fields_count, created_at, updated_at)
       VALUES 
         ('1', 'class-of-1990-electoral', 'CLASS OF 1990 - ELECTORAL COMMITTEE APPLICATION FORM', 'Application form for electoral committee positions.', 'https://docs.google.com/spreadsheets/d/1v5DW23IHEmCI553iCmcjqVJGDHShNGHs1qitFt6uDnA/edit', 'https://docs.google.com/forms/d/e/1FAIpQLSfrNXCyayrL8lLUCsIc69LvWyyH9MI6Iyx1EEXOE1RkX6jmxQ/viewform', 'Active', 15, '${now}', '${now}'),
