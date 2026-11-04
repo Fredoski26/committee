@@ -1,35 +1,41 @@
-import { getDb } from './db';
+import { dbQuery, dbQueryOne, dbExec } from './db';
 import { FormRecord, FormSubmissionRecord, WebhookLogRecord, DashboardStats, SubmissionAnswer } from './types';
 import crypto from 'node:crypto';
 
 export const formsRepo = {
-  getAll(): FormRecord[] {
-    const db = getDb();
-    const rows = db.prepare(`
+  async getAll(): Promise<FormRecord[]> {
+    const rows = await dbQuery(`
       SELECT f.*, 
         (SELECT COUNT(*) FROM form_submissions fs WHERE fs.form_id = f.form_id) as submissions_count
       FROM forms f
       ORDER BY f.created_at DESC
-    `).all() as any[];
+    `);
     return rows.map(r => ({
       ...r,
+      fields_count: Number(r.fields_count || 0),
       submissions_count: Number(r.submissions_count || 0)
     }));
   },
 
-  getByFormId(formId: string): FormRecord | null {
-    const db = getDb();
-    const row = db.prepare('SELECT * FROM forms WHERE form_id = ?').get(formId) as any;
-    return row || null;
+  async getByFormId(formId: string): Promise<FormRecord | null> {
+    const row = await dbQueryOne('SELECT * FROM forms WHERE form_id = ?', [formId]);
+    if (!row) return null;
+    return {
+      ...row,
+      fields_count: Number(row.fields_count || 0)
+    };
   },
 
-  getById(id: string): FormRecord | null {
-    const db = getDb();
-    const row = db.prepare('SELECT * FROM forms WHERE id = ?').get(id) as any;
-    return row || null;
+  async getById(id: string): Promise<FormRecord | null> {
+    const row = await dbQueryOne('SELECT * FROM forms WHERE id = ?', [id]);
+    if (!row) return null;
+    return {
+      ...row,
+      fields_count: Number(row.fields_count || 0)
+    };
   },
 
-  create(data: {
+  async create(data: {
     form_id: string;
     name: string;
     description?: string | null;
@@ -37,17 +43,16 @@ export const formsRepo = {
     form_url?: string | null;
     status?: 'Active' | 'Inactive';
     fields_count?: number;
-  }): FormRecord {
-    const db = getDb();
+  }): Promise<FormRecord> {
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
     const status = data.status || 'Active';
     const fieldsCount = data.fields_count || 0;
 
-    db.prepare(`
+    await dbExec(`
       INSERT INTO forms (id, form_id, name, description, sheet_url, form_url, status, fields_count, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    `, [
       id,
       data.form_id,
       data.name,
@@ -58,14 +63,14 @@ export const formsRepo = {
       fieldsCount,
       now,
       now
-    );
+    ]);
 
-    return this.getByFormId(data.form_id)!;
+    const created = await this.getByFormId(data.form_id);
+    return created!;
   },
 
-  update(formId: string, data: Partial<FormRecord>): FormRecord | null {
-    const db = getDb();
-    const existing = this.getByFormId(formId);
+  async update(formId: string, data: Partial<FormRecord>): Promise<FormRecord | null> {
+    const existing = await this.getByFormId(formId);
     if (!existing) return null;
 
     const now = new Date().toISOString();
@@ -76,32 +81,31 @@ export const formsRepo = {
     const status = data.status ?? existing.status;
     const fields_count = data.fields_count !== undefined ? data.fields_count : existing.fields_count;
 
-    db.prepare(`
+    await dbExec(`
       UPDATE forms
       SET name = ?, description = ?, sheet_url = ?, form_url = ?, status = ?, fields_count = ?, updated_at = ?
       WHERE form_id = ?
-    `).run(name, description, sheet_url, form_url, status, fields_count, now, formId);
+    `, [name, description, sheet_url, form_url, status, fields_count, now, formId]);
 
     return this.getByFormId(formId);
   },
 
-  delete(formId: string): boolean {
-    const db = getDb();
-    const res = db.prepare('DELETE FROM forms WHERE form_id = ?').run(formId);
+  async delete(formId: string): Promise<boolean> {
+    const res = await dbExec('DELETE FROM forms WHERE form_id = ?', [formId]);
     return res.changes > 0;
   },
 
-  ensureForm(formId: string, name: string, fieldsCount: number = 0, formUrl?: string, sheetUrl?: string): FormRecord {
-    const existing = this.getByFormId(formId);
+  async ensureForm(formId: string, name: string, fieldsCount: number = 0, formUrl?: string, sheetUrl?: string): Promise<FormRecord> {
+    const existing = await this.getByFormId(formId);
     if (existing) {
       if (fieldsCount > existing.fields_count || (!existing.form_url && formUrl) || (!existing.sheet_url && sheetUrl)) {
-        this.update(formId, {
+        await this.update(formId, {
           fields_count: Math.max(fieldsCount, existing.fields_count),
           form_url: formUrl || existing.form_url,
           sheet_url: sheetUrl || existing.sheet_url
         });
       }
-      return this.getByFormId(formId)!;
+      return (await this.getByFormId(formId))!;
     }
 
     return this.create({
@@ -116,7 +120,7 @@ export const formsRepo = {
 };
 
 export const submissionsRepo = {
-  list(params: {
+  async list(params: {
     formId?: string;
     status?: string;
     search?: string;
@@ -124,8 +128,7 @@ export const submissionsRepo = {
     endDate?: string;
     page?: number;
     limit?: number;
-  }): { items: FormSubmissionRecord[]; total: number; page: number; totalPages: number } {
-    const db = getDb();
+  }): Promise<{ items: FormSubmissionRecord[]; total: number; page: number; totalPages: number }> {
     const page = Math.max(1, params.page || 1);
     const limit = Math.max(1, Math.min(100, params.limit || 10));
     const offset = (page - 1) * limit;
@@ -163,7 +166,7 @@ export const submissionsRepo = {
 
     // Total count
     const countSql = `SELECT COUNT(*) as total FROM form_submissions fs WHERE ${whereSql}`;
-    const totalRow = db.prepare(countSql).get(...sqlParams) as any;
+    const totalRow = await dbQueryOne(countSql, sqlParams);
     const total = Number(totalRow?.total || 0);
 
     // Items
@@ -175,7 +178,7 @@ export const submissionsRepo = {
       ORDER BY fs.submitted_at DESC
       LIMIT ? OFFSET ?
     `;
-    const items = db.prepare(querySql).all(...sqlParams, limit, offset) as any[];
+    const items = await dbQuery(querySql, [...sqlParams, limit, offset]);
 
     return {
       items,
@@ -185,29 +188,25 @@ export const submissionsRepo = {
     };
   },
 
-  getById(id: string): FormSubmissionRecord | null {
-    const db = getDb();
-    const row = db.prepare(`
+  async getById(id: string): Promise<FormSubmissionRecord | null> {
+    return dbQueryOne(`
       SELECT fs.*, f.name as form_name
       FROM form_submissions fs
       LEFT JOIN forms f ON f.form_id = fs.form_id
       WHERE fs.id = ?
-    `).get(id) as any;
-    return row || null;
+    `, [id]);
   },
 
-  getByExternalId(formId: string, externalSubmissionId: string): FormSubmissionRecord | null {
-    const db = getDb();
-    const row = db.prepare(`
+  async getByExternalId(formId: string, externalSubmissionId: string): Promise<FormSubmissionRecord | null> {
+    return dbQueryOne(`
       SELECT fs.*, f.name as form_name
       FROM form_submissions fs
       LEFT JOIN forms f ON f.form_id = fs.form_id
       WHERE fs.form_id = ? AND fs.external_submission_id = ?
-    `).get(formId, externalSubmissionId) as any;
-    return row || null;
+    `, [formId, externalSubmissionId]);
   },
 
-  create(data: {
+  async create(data: {
     form_id: string;
     external_submission_id: string;
     submitter_name?: string | null;
@@ -218,17 +217,16 @@ export const submissionsRepo = {
     status?: 'pending' | 'reviewed' | 'completed';
     notes?: string | null;
     submitted_at: string;
-  }): FormSubmissionRecord {
-    const db = getDb();
+  }): Promise<FormSubmissionRecord> {
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
 
-    db.prepare(`
+    await dbExec(`
       INSERT INTO form_submissions (
         id, form_id, external_submission_id, submitter_name, submitter_email, submitter_phone,
         answers, raw_payload, status, notes, submitted_at, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    `, [
       id,
       data.form_id,
       data.external_submission_id,
@@ -242,45 +240,43 @@ export const submissionsRepo = {
       data.submitted_at,
       now,
       now
-    );
+    ]);
 
-    return this.getById(id)!;
+    const created = await this.getById(id);
+    return created!;
   },
 
-  updateStatus(id: string, status: 'pending' | 'reviewed' | 'completed', notes?: string | null): FormSubmissionRecord | null {
-    const db = getDb();
+  async updateStatus(id: string, status: 'pending' | 'reviewed' | 'completed', notes?: string | null): Promise<FormSubmissionRecord | null> {
     const now = new Date().toISOString();
 
     if (notes !== undefined) {
-      db.prepare(`
+      await dbExec(`
         UPDATE form_submissions
         SET status = ?, notes = ?, updated_at = ?
         WHERE id = ?
-      `).run(status, notes, now, id);
+      `, [status, notes, now, id]);
     } else {
-      db.prepare(`
+      await dbExec(`
         UPDATE form_submissions
         SET status = ?, updated_at = ?
         WHERE id = ?
-      `).run(status, now, id);
+      `, [status, now, id]);
     }
 
     return this.getById(id);
   },
 
-  delete(id: string): boolean {
-    const db = getDb();
-    const res = db.prepare('DELETE FROM form_submissions WHERE id = ?').run(id);
+  async delete(id: string): Promise<boolean> {
+    const res = await dbExec('DELETE FROM form_submissions WHERE id = ?', [id]);
     return res.changes > 0;
   },
 
-  getAllForExport(params: {
+  async getAllForExport(params: {
     formId?: string;
     status?: string;
     startDate?: string;
     endDate?: string;
-  }): FormSubmissionRecord[] {
-    const db = getDb();
+  }): Promise<FormSubmissionRecord[]> {
     const whereClauses: string[] = ['1=1'];
     const sqlParams: any[] = [];
 
@@ -308,37 +304,35 @@ export const submissionsRepo = {
       WHERE ${whereClauses.join(' AND ')}
       ORDER BY fs.submitted_at DESC
     `;
-    return db.prepare(querySql).all(...sqlParams) as any[];
+    return dbQuery(querySql, sqlParams);
   },
 
-  getStats(): DashboardStats {
-    const db = getDb();
-
+  async getStats(): Promise<DashboardStats> {
     // Total forms
-    const totalFormsRow = db.prepare('SELECT COUNT(*) as count FROM forms').get() as any;
+    const totalFormsRow = await dbQueryOne('SELECT COUNT(*) as count FROM forms');
     const totalForms = Number(totalFormsRow?.count || 0);
 
     // Active forms
-    const activeFormsRow = db.prepare("SELECT COUNT(*) as count FROM forms WHERE status = 'Active'").get() as any;
+    const activeFormsRow = await dbQueryOne("SELECT COUNT(*) as count FROM forms WHERE status = 'Active'");
     const activeForms = Number(activeFormsRow?.count || 0);
 
     // Total submissions
-    const totalSubmissionsRow = db.prepare('SELECT COUNT(*) as count FROM form_submissions').get() as any;
+    const totalSubmissionsRow = await dbQueryOne('SELECT COUNT(*) as count FROM form_submissions');
     const totalSubmissions = Number(totalSubmissionsRow?.count || 0);
 
     // Today submissions (last 24 hours)
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const todaySubmissionsRow = db.prepare('SELECT COUNT(*) as count FROM form_submissions WHERE submitted_at >= ?').get(yesterday) as any;
+    const todaySubmissionsRow = await dbQueryOne('SELECT COUNT(*) as count FROM form_submissions WHERE submitted_at >= ?', [yesterday]);
     const todaySubmissions = Number(todaySubmissionsRow?.count || 0);
 
     // Submissions by Form
-    const byFormRows = db.prepare(`
-      SELECT f.form_id as formId, f.name as formName, COUNT(fs.id) as count
+    const byFormRows = await dbQuery(`
+      SELECT f.form_id as "formId", f.name as "formName", COUNT(fs.id) as count
       FROM forms f
       LEFT JOIN form_submissions fs ON fs.form_id = f.form_id
       GROUP BY f.form_id, f.name
       ORDER BY count DESC
-    `).all() as any[];
+    `);
     const submissionsByForm = byFormRows.map(r => ({
       formId: r.formId,
       formName: r.formName,
@@ -346,11 +340,11 @@ export const submissionsRepo = {
     }));
 
     // Submissions by Status
-    const byStatusRows = db.prepare(`
+    const byStatusRows = await dbQuery(`
       SELECT status, COUNT(*) as count
       FROM form_submissions
       GROUP BY status
-    `).all() as any[];
+    `);
     const submissionsByStatus = byStatusRows.map(r => ({
       status: r.status,
       count: Number(r.count || 0)
@@ -358,13 +352,13 @@ export const submissionsRepo = {
 
     // Timeline (last 14 days)
     const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const timelineRows = db.prepare(`
+    const timelineRows = await dbQuery(`
       SELECT substr(submitted_at, 1, 10) as date, COUNT(*) as count
       FROM form_submissions
       WHERE substr(submitted_at, 1, 10) >= ?
       GROUP BY substr(submitted_at, 1, 10)
       ORDER BY date ASC
-    `).all(fourteenDaysAgo) as any[];
+    `, [fourteenDaysAgo]);
     const timeline = timelineRows.map(r => ({
       date: r.date,
       count: Number(r.count || 0)
@@ -372,12 +366,12 @@ export const submissionsRepo = {
 
     // Question distribution for key dropdown/multiple choice questions
     const questionDistributions: { question: string; answers: { label: string; count: number }[] }[] = [];
-    const allSubmissions = db.prepare('SELECT answers FROM form_submissions LIMIT 200').all() as any[];
+    const allSubmissions = await dbQuery('SELECT answers FROM form_submissions LIMIT 200');
     const positionCounts: Record<string, number> = {};
 
     for (const sub of allSubmissions) {
       try {
-        const answers: SubmissionAnswer[] = JSON.parse(sub.answers);
+        const answers: SubmissionAnswer[] = typeof sub.answers === 'string' ? JSON.parse(sub.answers) : sub.answers;
         for (const ans of answers) {
           const qLower = ans.question.toLowerCase();
           if (qLower.includes('position') || qLower.includes('role')) {
@@ -411,7 +405,7 @@ export const submissionsRepo = {
 };
 
 export const webhookLogsRepo = {
-  create(data: {
+  async create(data: {
     form_id?: string | null;
     external_submission_id?: string | null;
     status: 'success' | 'duplicate' | 'error' | 'unauthorized';
@@ -422,17 +416,16 @@ export const webhookLogsRepo = {
     headers?: string | null;
     ip?: string | null;
     user_agent?: string | null;
-  }): WebhookLogRecord {
-    const db = getDb();
+  }): Promise<WebhookLogRecord> {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
 
-    db.prepare(`
+    await dbExec(`
       INSERT INTO webhook_logs (
         id, form_id, external_submission_id, status, status_code, message, error_message,
         payload, headers, ip, user_agent, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    `, [
       id,
       data.form_id || null,
       data.external_submission_id || null,
@@ -445,14 +438,12 @@ export const webhookLogsRepo = {
       data.ip || null,
       data.user_agent || null,
       now
-    );
+    ]);
 
-    const row = db.prepare('SELECT * FROM webhook_logs WHERE id = ?').get(id) as any;
-    return row;
+    return (await dbQueryOne('SELECT * FROM webhook_logs WHERE id = ?', [id]))!;
   },
 
-  list(params: { limit?: number; page?: number; status?: string }): { items: WebhookLogRecord[]; total: number } {
-    const db = getDb();
+  async list(params: { limit?: number; page?: number; status?: string }): Promise<{ items: WebhookLogRecord[]; total: number }> {
     const limit = Math.max(1, Math.min(100, params.limit || 20));
     const page = Math.max(1, params.page || 1);
     const offset = (page - 1) * limit;
@@ -467,22 +458,20 @@ export const webhookLogsRepo = {
 
     const whereSql = whereClauses.join(' AND ');
 
-    const countRow = db.prepare(`SELECT COUNT(*) as total FROM webhook_logs WHERE ${whereSql}`).get(...sqlParams) as any;
+    const countRow = await dbQueryOne(`SELECT COUNT(*) as total FROM webhook_logs WHERE ${whereSql}`, sqlParams);
     const total = Number(countRow?.total || 0);
 
-    const items = db.prepare(`
+    const items = await dbQuery(`
       SELECT * FROM webhook_logs
       WHERE ${whereSql}
       ORDER BY created_at DESC
       LIMIT ? OFFSET ?
-    `).all(...sqlParams, limit, offset) as any[];
+    `, [...sqlParams, limit, offset]);
 
     return { items, total };
   },
 
-  getById(id: string): WebhookLogRecord | null {
-    const db = getDb();
-    const row = db.prepare('SELECT * FROM webhook_logs WHERE id = ?').get(id) as any;
-    return row || null;
+  async getById(id: string): Promise<WebhookLogRecord | null> {
+    return dbQueryOne('SELECT * FROM webhook_logs WHERE id = ?', [id]);
   }
 };

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Navbar from '@/components/Navbar';
 import StatCards from '@/components/StatCards';
 import RecentForms from '@/components/RecentForms';
@@ -37,7 +37,6 @@ export default function DashboardPage() {
   const [endDate, setEndDate] = useState<string>('');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Modals
@@ -72,7 +71,7 @@ export default function DashboardPage() {
   }, []);
 
   // Fetch Submissions
-  const fetchSubmissions = useCallback(async () => {
+  const fetchSubmissions = useCallback(async (isDashboard: boolean = false) => {
     try {
       const params = new URLSearchParams();
       if (selectedFormId) params.append('formId', selectedFormId);
@@ -81,7 +80,7 @@ export default function DashboardPage() {
       if (startDate) params.append('startDate', startDate);
       if (endDate) params.append('endDate', endDate);
       params.append('page', page.toString());
-      params.append('limit', currentTab === 'dashboard' ? '5' : '10');
+      params.append('limit', isDashboard ? '5' : '10');
 
       const res = await fetch(`/api/form-responses?${params.toString()}`);
       const data = await res.json();
@@ -93,23 +92,40 @@ export default function DashboardPage() {
     } catch (err) {
       console.error('Error fetching submissions:', err);
     }
-  }, [selectedFormId, selectedStatus, searchTerm, startDate, endDate, page, currentTab]);
+  }, [selectedFormId, selectedStatus, searchTerm, startDate, endDate, page]);
 
-  // Refresh all data
+  // Refresh all
   const refreshAll = useCallback(async () => {
     setIsRefreshing(true);
-    await Promise.all([fetchForms(), fetchStats(), fetchSubmissions()]);
+    await Promise.all([
+      fetchForms(),
+      fetchStats(),
+      fetchSubmissions(currentTab === 'dashboard')
+    ]);
     setIsRefreshing(false);
-  }, [fetchForms, fetchStats, fetchSubmissions]);
+  }, [fetchForms, fetchStats, fetchSubmissions, currentTab]);
 
+  // Initial mount load
   useEffect(() => {
-    const init = async () => {
-      setIsLoading(true);
-      await Promise.all([fetchForms(), fetchStats(), fetchSubmissions()]);
-      setIsLoading(false);
-    };
-    init();
-  }, [fetchForms, fetchStats, fetchSubmissions]);
+    fetchForms();
+    fetchStats();
+    fetchSubmissions(true);
+  }, []); // Run ONCE on mount
+
+  // Watch for filter/page/tab changes
+  useEffect(() => {
+    fetchSubmissions(currentTab === 'dashboard');
+  }, [currentTab, page, selectedFormId, selectedStatus, searchTerm, startDate, endDate]);
+
+  // Gentle background auto-refresh every 12 seconds so new submissions reflect automatically
+  useEffect(() => {
+    const timer = setInterval(() => {
+      fetchStats();
+      fetchForms();
+      fetchSubmissions(currentTab === 'dashboard');
+    }, 12000);
+    return () => clearInterval(timer);
+  }, [fetchStats, fetchForms, fetchSubmissions, currentTab]);
 
   // Handle Form actions
   const handleToggleStatus = async (formId: string, currentStatus: string) => {
@@ -177,7 +193,7 @@ export default function DashboardPage() {
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         
-        {/* Page Title & Subtitle (matching screenshot) */}
+        {/* Page Title & Subtitle */}
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">
             {currentTab === 'dashboard' && 'Dashboard'}
@@ -195,9 +211,9 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        {/* Tab 1: Dashboard (Matches exact uploaded screenshot) */}
+        {/* Tab 1: Dashboard */}
         {currentTab === 'dashboard' && (
-          <div className="space-y-8 animate-in fade-in duration-200">
+          <div className="space-y-8">
             {/* Stat Cards Row */}
             <StatCards
               totalForms={stats.totalForms}
@@ -248,7 +264,7 @@ export default function DashboardPage() {
 
         {/* Tab 2: My Forms */}
         {currentTab === 'forms' && (
-          <div className="space-y-6 animate-in fade-in duration-200">
+          <div className="space-y-6">
             <RecentForms
               forms={forms}
               onViewForm={(formId) => {
@@ -264,7 +280,7 @@ export default function DashboardPage() {
 
         {/* Tab 3: Responses */}
         {currentTab === 'responses' && (
-          <div className="space-y-6 animate-in fade-in duration-200">
+          <div className="space-y-6">
             <RecentSubmissionsTable
               submissions={submissions}
               forms={forms}
@@ -293,14 +309,14 @@ export default function DashboardPage() {
 
         {/* Tab 4: Analytics */}
         {currentTab === 'analytics' && (
-          <div className="animate-in fade-in duration-200">
+          <div>
             <AnalyticsView stats={stats} />
           </div>
         )}
 
         {/* Tab 5: Integration & Logs */}
         {currentTab === 'integration' && (
-          <div className="animate-in fade-in duration-200">
+          <div>
             <IntegrationLogsView
               onOpenAppsScript={() => setIsAppsScriptOpen(true)}
               onRefreshAll={refreshAll}

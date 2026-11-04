@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '20', 10);
 
-    const result = webhookLogsRepo.list({ status, page, limit });
+    const result = await webhookLogsRepo.list({ status, page, limit });
     return NextResponse.json({
       success: true,
       ...result

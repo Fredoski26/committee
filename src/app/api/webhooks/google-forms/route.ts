@@ -3,6 +3,8 @@ import { WebhookSubmissionSchema } from '@/lib/validations';
 import { formsRepo, submissionsRepo, webhookLogsRepo } from '@/lib/repositories';
 import { SubmissionAnswer } from '@/lib/types';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '127.0.0.1';
   const userAgent = req.headers.get('user-agent') || 'Unknown';
@@ -14,7 +16,7 @@ export async function POST(req: NextRequest) {
     try {
       body = JSON.parse(rawBodyText);
     } catch (e) {
-      webhookLogsRepo.create({
+      await webhookLogsRepo.create({
         status: 'error',
         status_code: 400,
         message: 'Invalid JSON payload',
@@ -34,7 +36,7 @@ export async function POST(req: NextRequest) {
     const providedSecret = headerSecret || bodySecret;
 
     if (!providedSecret || providedSecret !== expectedSecret) {
-      webhookLogsRepo.create({
+      await webhookLogsRepo.create({
         form_id: body.formId || null,
         external_submission_id: body.externalSubmissionId || null,
         status: 'unauthorized',
@@ -60,7 +62,7 @@ export async function POST(req: NextRequest) {
     const parseResult = WebhookSubmissionSchema.safeParse(body);
     if (!parseResult.success) {
       const issues = parseResult.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join(', ');
-      webhookLogsRepo.create({
+      await webhookLogsRepo.create({
         form_id: body.formId || null,
         external_submission_id: body.externalSubmissionId || null,
         status: 'error',
@@ -117,9 +119,9 @@ export async function POST(req: NextRequest) {
     }
 
     // 5. Check for Duplicate Submission
-    const existing = submissionsRepo.getByExternalId(data.formId, data.externalSubmissionId);
+    const existing = await submissionsRepo.getByExternalId(data.formId, data.externalSubmissionId);
     if (existing) {
-      webhookLogsRepo.create({
+      await webhookLogsRepo.create({
         form_id: data.formId,
         external_submission_id: data.externalSubmissionId,
         status: 'duplicate',
@@ -140,7 +142,7 @@ export async function POST(req: NextRequest) {
 
     // 6. Ensure Form Exists
     const formName = data.formName || (data.formId === 'class-of-1990-electoral' ? 'CLASS OF 1990 - ELECTORAL COMMITTEE APPLICATION FORM' : data.formId);
-    const form = formsRepo.ensureForm(
+    const form = await formsRepo.ensureForm(
       data.formId,
       formName,
       formattedAnswers.length,
@@ -150,7 +152,7 @@ export async function POST(req: NextRequest) {
 
     // 7. Save Submission
     const submittedAt = data.submittedAt || new Date().toISOString();
-    const createdSubmission = submissionsRepo.create({
+    const createdSubmission = await submissionsRepo.create({
       form_id: form.form_id,
       external_submission_id: data.externalSubmissionId,
       submitter_name: submitterName,
@@ -163,7 +165,7 @@ export async function POST(req: NextRequest) {
     });
 
     // 8. Log Success
-    webhookLogsRepo.create({
+    await webhookLogsRepo.create({
       form_id: data.formId,
       external_submission_id: data.externalSubmissionId,
       status: 'success',
@@ -187,7 +189,7 @@ export async function POST(req: NextRequest) {
 
   } catch (err: any) {
     console.error('Webhook error:', err);
-    webhookLogsRepo.create({
+    await webhookLogsRepo.create({
       status: 'error',
       status_code: 500,
       message: 'Internal server error while processing webhook',

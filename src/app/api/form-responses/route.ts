@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '10', 10);
 
-    const result = submissionsRepo.list({
+    const result = await submissionsRepo.list({
       formId,
       status,
       search,

@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { formsRepo } from '@/lib/repositories';
 
+export const dynamic = 'force-dynamic';
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
     const body = await req.json();
-    const updated = formsRepo.update(params.id, body);
+    const updated = await formsRepo.update(params.id, body);
     if (!updated) {
       return NextResponse.json({ success: false, error: 'Form not found' }, { status: 404 });
     }
@@ -22,7 +24,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const deleted = formsRepo.delete(params.id);
+    const deleted = await formsRepo.delete(params.id);
     if (!deleted) {
       return NextResponse.json({ success: false, error: 'Form not found' }, { status: 404 });
     }

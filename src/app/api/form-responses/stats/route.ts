@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const stats = submissionsRepo.getStats();
+    const stats = await submissionsRepo.getStats();
     return NextResponse.json({
       success: true,
       stats

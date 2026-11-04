@@ -1,19 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { submissionsRepo } from '@/lib/repositories';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const submission = submissionsRepo.getById(params.id);
+    const submission = await submissionsRepo.getById(params.id);
     if (!submission) {
       return NextResponse.json({ success: false, error: 'Submission not found' }, { status: 404 });
     }
 
     let parsedAnswers = [];
     try {
-      parsedAnswers = JSON.parse(submission.answers);
+      parsedAnswers = typeof submission.answers === 'string' ? JSON.parse(submission.answers) : submission.answers;
     } catch {
       parsedAnswers = [];
     }
@@ -45,7 +47,7 @@ export async function PATCH(
       );
     }
 
-    const updated = submissionsRepo.updateStatus(params.id, status, notes);
+    const updated = await submissionsRepo.updateStatus(params.id, status, notes);
     if (!updated) {
       return NextResponse.json({ success: false, error: 'Submission not found' }, { status: 404 });
     }
@@ -64,7 +66,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const deleted = submissionsRepo.delete(params.id);
+    const deleted = await submissionsRepo.delete(params.id);
     if (!deleted) {
       return NextResponse.json({ success: false, error: 'Submission not found' }, { status: 404 });
     }

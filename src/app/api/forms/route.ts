@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { formsRepo } from '@/lib/repositories';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
-    const forms = formsRepo.getAll();
+    const forms = await formsRepo.getAll();
     return NextResponse.json({
       success: true,
       forms
@@ -25,10 +27,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const existing = formsRepo.getByFormId(formId);
+    const existing = await formsRepo.getByFormId(formId);
     let form;
     if (existing) {
-      form = formsRepo.update(formId, {
+      form = await formsRepo.update(formId, {
         name,
         description,
         sheet_url: sheetUrl,
@@ -37,7 +39,7 @@ export async function POST(req: NextRequest) {
         fields_count: fieldsCount !== undefined ? fieldsCount : existing.fields_count
       });
     } else {
-      form = formsRepo.create({
+      form = await formsRepo.create({
         form_id: formId,
         name,
         description,

@@ -13,19 +13,17 @@ export async function GET(req: NextRequest) {
     const endDate = searchParams.get('endDate') || undefined;
     const format = (searchParams.get('format') || 'csv').toLowerCase();
 
-    const items = submissionsRepo.getAllForExport({
+    const items = await submissionsRepo.getAllForExport({
       formId,
       status,
       startDate,
       endDate
     });
 
-    // Collect all unique questions across submissions for standard column alignment
-    const allQuestions = new Set<string>();
     const preparedRows = items.map(sub => {
       let answers: any[] = [];
       try {
-        answers = JSON.parse(sub.answers);
+        answers = typeof sub.answers === 'string' ? JSON.parse(sub.answers) : sub.answers;
       } catch {
         answers = [];
       }
@@ -44,7 +42,6 @@ export async function GET(req: NextRequest) {
 
       for (const a of answers) {
         if (a && a.question) {
-          allQuestions.add(a.question);
           const val = Array.isArray(a.answer) ? a.answer.join('; ') : a.answer ?? '';
           rowObj[a.question] = val;
         }
@@ -69,7 +66,6 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Default: CSV
     const csvContent = XLSX.utils.sheet_to_csv(worksheet);
     return new NextResponse(csvContent, {
       status: 200,
