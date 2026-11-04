@@ -1,0 +1,68 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Form {
+  id          String   @id @default(cuid())
+  formId      String   @unique
+  name        String
+  description String?
+  sheetUrl    String?
+  formUrl     String?
+  status      String   @default("Active") // "Active" | "Inactive"
+  fieldsCount Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  submissions FormSubmission[]
+  logs        WebhookLog[]
+
+  @@index([status])
+}
+
+model FormSubmission {
+  id                   String   @id @default(cuid())
+  formId               String
+  form                 Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  externalSubmissionId String
+  submitterName        String?
+  submitterEmail       String?
+  submitterPhone       String?
+  answers              String   // JSON string: array of { question, answer, type? }
+  rawPayload           String?  // JSON string
+  status               String   @default("pending") // "pending" | "reviewed" | "completed"
+  notes                String?
+  submittedAt          DateTime
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@unique([formId, externalSubmissionId])
+  @@index([formId])
+  @@index([submittedAt])
+  @@index([status])
+}
+
+model WebhookLog {
+  id                   String   @id @default(cuid())
+  formId               String?
+  form                 Form?    @relation(fields: [formId], references: [id], onDelete: SetNull)
+  externalSubmissionId String?
+  status               String   // "success" | "duplicate" | "error" | "rate_limited"
+  statusCode           Int
+  message              String?
+  errorMessage         String?
+  payload              String   // Raw body or summary JSON
+  headers              String?  // Sanitized headers JSON
+  ip                   String?
+  userAgent            String?
+  createdAt            DateTime @default(now())
+
+  @@index([formId])
+  @@index([status])
+  @@index([createdAt])
+}
