@@ -5,39 +5,21 @@
  * Target Sheet: https://docs.google.com/spreadsheets/d/1v5DW23IHEmCI553iCmcjqVJGDHShNGHs1qitFt6uDnA
  */
 
-/**
- * All settings are read exclusively from Script Properties.
- * Go to Extensions > Apps Script > Project Settings > Script Properties to set:
- *   WEBHOOK_URL    – e.g. https://committee-psi.vercel.app/api/webhooks/google-forms
- *   WEBHOOK_SECRET – must match GOOGLE_FORMS_WEBHOOK_SECRET in your server .env
- *   FORM_ID        – e.g. class-of-1990-electoral
- *   FORM_NAME      – e.g. CLASS OF 1990 - ELECTORAL COMMITTEE APPLICATION FORM
- */
+var CONFIG = {
+  DEFAULT_WEBHOOK_URL: 'https://committee-psi.vercel.app/api/webhooks/google-forms',
+  DEFAULT_WEBHOOK_SECRET: 'gforms_sec_7f9a8d4c2b1e0f3a5e8c',
+  DEFAULT_FORM_ID: 'class-of-1990-electoral',
+  FORM_ID: 'class-of-1990-electoral',
+  DEFAULT_FORM_NAME: 'CLASS OF 1990 - ELECTORAL COMMITTEE APPLICATION FORM'
+};
+
 function getSettings() {
   var props = PropertiesService.getScriptProperties();
-  var webhookUrl    = props.getProperty('WEBHOOK_URL');
-  var webhookSecret = props.getProperty('WEBHOOK_SECRET');
-  var formId        = props.getProperty('FORM_ID');
-  var formName      = props.getProperty('FORM_NAME');
-
-  var missing = [];
-  if (!webhookUrl)    missing.push('WEBHOOK_URL');
-  if (!webhookSecret) missing.push('WEBHOOK_SECRET');
-  if (!formId)        missing.push('FORM_ID');
-  if (!formName)      missing.push('FORM_NAME');
-
-  if (missing.length > 0) {
-    throw new Error(
-      'Missing Script Properties: ' + missing.join(', ') + '. ' +
-      'Go to Extensions > Apps Script > Project Settings > Script Properties to add them.'
-    );
-  }
-
   return {
-    webhookUrl:    webhookUrl,
-    webhookSecret: webhookSecret,
-    formId:        formId,
-    formName:      formName
+    webhookUrl:    props.getProperty('WEBHOOK_URL')    || CONFIG.DEFAULT_WEBHOOK_URL,
+    webhookSecret: props.getProperty('WEBHOOK_SECRET') || CONFIG.DEFAULT_WEBHOOK_SECRET,
+    formId:        props.getProperty('FORM_ID')        || CONFIG.DEFAULT_FORM_ID,
+    formName:      props.getProperty('FORM_NAME')      || CONFIG.DEFAULT_FORM_NAME
   };
 }
 
