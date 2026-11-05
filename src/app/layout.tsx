@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'FormBuilder - Google Forms Dashboard',
-  description: 'Real-time response management dashboard for Google Forms & Google Sheets',
+  title: 'Electoral Committee - Dashboard',
+  description: 'Real-time response management dashboard for Electoral Committee Application Forms',
 };
 
 export default function RootLayout({

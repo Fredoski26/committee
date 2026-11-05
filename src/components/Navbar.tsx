@@ -25,7 +25,7 @@ export default function Navbar({
         <div className="flex items-center space-x-8">
           <div className="flex items-center space-x-2 cursor-pointer" onClick={() => onTabChange('dashboard')}>
             <span className="text-2xl font-black tracking-tight text-slate-900">
-              Form<span className="text-blue-600">Builder</span>
+              Electoral <span className="text-blue-600">Committee</span>
             </span>
           </div>
 
@@ -39,17 +39,6 @@ export default function Navbar({
               }`}
             >
               Dashboard
-            </button>
-
-            <button
-              onClick={() => onTabChange('forms')}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
-                currentTab === 'forms'
-                  ? 'bg-blue-100/80 text-blue-700 font-semibold shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              My Forms
             </button>
 
             <button

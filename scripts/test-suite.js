@@ -236,11 +236,11 @@ async function runTests() {
   });
 
   // 15. Frontend Dashboard HTML
-  await test('GET / renders dashboard HTML with FormBuilder branding', async () => {
+  await test('GET / renders dashboard HTML with Electoral Committee branding', async () => {
     const res = await fetch(`${BASE_URL}/`);
     assert.strictEqual(res.status, 200);
     const html = await res.text();
-    assert.ok(html.includes('FormBuilder'));
+    assert.ok(html.includes('Electoral Committee') || html.includes('Electoral'));
     assert.ok(html.includes('Dashboard'));
   });
 

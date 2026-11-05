@@ -223,18 +223,6 @@ export default function DashboardPage() {
               onFilterSubmissions={() => setCurrentTab('responses')}
             />
 
-            {/* Recent Forms Grid */}
-            <RecentForms
-              forms={forms}
-              onViewForm={(formId) => {
-                setSelectedFormId(formId);
-                setCurrentTab('responses');
-              }}
-              onEditForm={(f) => setEditingForm(f)}
-              onToggleStatus={handleToggleStatus}
-              onDeleteForm={handleDeleteForm}
-            />
-
             {/* Recent Submissions Table */}
             <RecentSubmissionsTable
               submissions={submissions}
@@ -348,7 +336,7 @@ export default function DashboardPage() {
       <footer className="border-t border-slate-200/80 bg-white py-6 mt-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-3">
           <div className="flex items-center space-x-2">
-            <span className="font-bold text-slate-800">FormBuilder</span>
+            <span className="font-bold text-slate-800">Electoral Committee</span>
             <span>•</span>
             <span>Google Forms Integration Engine</span>
           </div>
