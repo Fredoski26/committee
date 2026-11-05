@@ -7,18 +7,17 @@ const isPostgres = !!(
 );
 
 let sqliteDbInstance: any = null;
-let neonClientInstance: any = null;
+let pgPool: any = null;
 let isInitialized = false;
 
-// Neon postgres client initialization
-// Use sql.query(queryStr, params) for parameterised queries (new API in @neondatabase/serverless v1+).
-function getNeonClient() {
-  if (!neonClientInstance) {
-    const { neon } = require('@neondatabase/serverless');
+// PostgreSQL pool via standard `pg` driver (TCP/5432, works in all environments).
+function getPgPool() {
+  if (!pgPool) {
+    const { Pool } = require('pg');
     const connStr = process.env.POSTGRES_URL || process.env.DATABASE_URL;
-    neonClientInstance = neon(connStr);
+    pgPool = new Pool({ connectionString: connStr, ssl: { rejectUnauthorized: false } });
   }
-  return neonClientInstance;
+  return pgPool;
 }
 
 // SQLite initialization
@@ -44,12 +43,11 @@ export async function dbQuery<T = any>(sql: string, params: any[] = []): Promise
   await ensureInitialized();
 
   if (isPostgres) {
-    const sqlClient = getNeonClient();
+    const pool = getPgPool();
     let paramIndex = 1;
     const pgSql = sql.replace(/\?/g, () => `$${paramIndex++}`);
-    // Use .query() for parameterised calls (tagged-template-only fn in new SDK)
-    const rows = await sqlClient.query(pgSql, params);
-    return (Array.isArray(rows) ? rows : []) as T[];
+    const result = await pool.query(pgSql, params);
+    return (result.rows ?? []) as T[];
   } else {
     const db = getSqliteDb();
     const stmt = db.prepare(sql);
@@ -69,13 +67,11 @@ export async function dbExec(sql: string, params: any[] = []): Promise<{ changes
   await ensureInitialized();
 
   if (isPostgres) {
-    const sqlClient = getNeonClient();
+    const pool = getPgPool();
     let paramIndex = 1;
     const pgSql = sql.replace(/\?/g, () => `$${paramIndex++}`);
-    // Use .query() for parameterised calls (tagged-template-only fn in new SDK)
-    const rows = await sqlClient.query(pgSql, params);
-    const changes = Array.isArray(rows) ? rows.length : 1;
-    return { changes };
+    const result = await pool.query(pgSql, params);
+    return { changes: result.rowCount ?? 0 };
   } else {
     const db = getSqliteDb();
     const stmt = db.prepare(sql);
@@ -89,10 +85,9 @@ async function ensureInitialized() {
   if (isInitialized) return;
 
   if (isPostgres) {
-    const sqlClient = getNeonClient();
-    // Run each DDL statement separately — neon HTTP client doesn't support
-    // multiple statements in one call. Use .query() for all calls (new SDK API).
-    await sqlClient.query(`
+    const pool = getPgPool();
+    // Run each DDL statement separately — pg doesn't support multiple statements in one query() call safely.
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS forms (
         id TEXT PRIMARY KEY,
         form_id TEXT UNIQUE NOT NULL,
@@ -106,10 +101,10 @@ async function ensureInitialized() {
         updated_at TEXT NOT NULL
       )
     `);
-    await sqlClient.query(`CREATE INDEX IF NOT EXISTS idx_forms_status ON forms(status)`);
-    await sqlClient.query(`CREATE INDEX IF NOT EXISTS idx_forms_form_id ON forms(form_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_forms_status ON forms(status)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_forms_form_id ON forms(form_id)`);
 
-    await sqlClient.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS form_submissions (
         id TEXT PRIMARY KEY,
         form_id TEXT NOT NULL,
@@ -128,11 +123,11 @@ async function ensureInitialized() {
         UNIQUE(form_id, external_submission_id)
       )
     `);
-    await sqlClient.query(`CREATE INDEX IF NOT EXISTS idx_submissions_form_id ON form_submissions(form_id)`);
-    await sqlClient.query(`CREATE INDEX IF NOT EXISTS idx_submissions_submitted_at ON form_submissions(submitted_at)`);
-    await sqlClient.query(`CREATE INDEX IF NOT EXISTS idx_submissions_status ON form_submissions(status)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_submissions_form_id ON form_submissions(form_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_submissions_submitted_at ON form_submissions(submitted_at)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_submissions_status ON form_submissions(status)`);
 
-    await sqlClient.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS webhook_logs (
         id TEXT PRIMARY KEY,
         form_id TEXT,
@@ -148,9 +143,9 @@ async function ensureInitialized() {
         created_at TEXT NOT NULL
       )
     `);
-    await sqlClient.query(`CREATE INDEX IF NOT EXISTS idx_logs_form_id ON webhook_logs(form_id)`);
-    await sqlClient.query(`CREATE INDEX IF NOT EXISTS idx_logs_status ON webhook_logs(status)`);
-    await sqlClient.query(`CREATE INDEX IF NOT EXISTS idx_logs_created_at ON webhook_logs(created_at)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_logs_form_id ON webhook_logs(form_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_logs_status ON webhook_logs(status)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_logs_created_at ON webhook_logs(created_at)`);
 
     // Seed default forms (idempotent)
     const now = new Date().toISOString();
@@ -161,7 +156,7 @@ async function ensureInitialized() {
       ['4', 'new-features', 'New Features', 'Feedback on upcoming portal features', null, null, 'Active', 5],
     ];
     for (const [id, formId, name, description, sheetUrl, formUrl, status, fieldsCount] of seedRows) {
-      await sqlClient.query(
+      await pool.query(
         `INSERT INTO forms (id, form_id, name, description, sheet_url, form_url, status, fields_count, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          ON CONFLICT (form_id) DO NOTHING`,
