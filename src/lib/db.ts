@@ -1,5 +1,22 @@
 import path from 'node:path';
 import fs from 'node:fs';
+import dns from 'node:dns';
+
+// Patch dns.lookup to fall back to dns.resolve4 when libuv OS lookup fails.
+// This is needed in sandboxed/containerised environments where the OS resolver
+// is restricted but the Node.js async DNS resolver works fine.
+const _origLookup = dns.lookup.bind(dns);
+(dns as any).lookup = (hostname: string, optsOrCb: any, cb?: any) => {
+  if (typeof optsOrCb === 'function') { cb = optsOrCb; optsOrCb = {}; }
+  _origLookup(hostname, optsOrCb, (err: any, address: string, family: number) => {
+    if (!err) return cb(null, address, family);
+    // OS lookup failed — fall back to the async resolver which uses dns.resolve4
+    dns.resolve4(hostname, (err2: any, addrs: string[]) => {
+      if (err2) return cb(err); // return original error
+      cb(null, addrs[0], 4);
+    });
+  });
+};
 
 const isPostgres = !!(
   process.env.POSTGRES_URL || 
