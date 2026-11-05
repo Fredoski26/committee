@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
     // 4. Auto-extract Submitter Name, Email, Phone if not explicitly set
     let submitterName = data.submitterName || null;
     let submitterEmail = data.submitterEmail || null;
-    let submitterPhone = data.submitterPhone || null;
+    let submitterPhone = data.submitterPhone !== undefined && data.submitterPhone !== null ? String(data.submitterPhone) : null;
 
     for (const item of formattedAnswers) {
       const q = item.question.toLowerCase();

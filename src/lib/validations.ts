@@ -8,7 +8,7 @@ export const WebhookAnswerSchema = z.object({
     z.boolean(),
     z.array(z.string()),
     z.null()
-  ]),
+  ]).optional(),
   type: z.string().optional()
 });
 
@@ -20,9 +20,9 @@ export const WebhookSubmissionSchema = z.object({
   sheetUrl: z.string().optional(),
   externalSubmissionId: z.string().min(1, 'externalSubmissionId is required'),
   submittedAt: z.string().optional(),
-  submitterEmail: z.string().email().optional().or(z.literal('')).nullable(),
+  submitterEmail: z.string().optional().nullable(),
   submitterName: z.string().optional().nullable(),
-  submitterPhone: z.string().optional().nullable(),
+  submitterPhone: z.union([z.string(), z.number()]).optional().nullable(),
   answers: z.array(WebhookAnswerSchema).or(z.record(z.any())),
   metadata: z.record(z.any()).optional()
 });
