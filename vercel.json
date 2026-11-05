@@ -1,0 +1,9 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "next build",
+  "installCommand": "npm install",
+  "env": {
+    "GOOGLE_FORMS_WEBHOOK_SECRET": "@google_forms_webhook_secret",
+    "ADMIN_API_KEY": "@admin_api_key"
+  }
+}

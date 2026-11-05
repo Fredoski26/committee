@@ -11,6 +11,7 @@ let neonClientInstance: any = null;
 let isInitialized = false;
 
 // Neon postgres client initialization
+// Use sql.query(queryStr, params) for parameterised queries (new API in @neondatabase/serverless v1+).
 function getNeonClient() {
   if (!neonClientInstance) {
     const { neon } = require('@neondatabase/serverless');
@@ -46,8 +47,9 @@ export async function dbQuery<T = any>(sql: string, params: any[] = []): Promise
     const sqlClient = getNeonClient();
     let paramIndex = 1;
     const pgSql = sql.replace(/\?/g, () => `$${paramIndex++}`);
+    // Use .query() for parameterised calls (tagged-template-only fn in new SDK)
     const rows = await sqlClient.query(pgSql, params);
-    return (Array.isArray(rows) ? rows : (rows as any)?.rows || []) as T[];
+    return (Array.isArray(rows) ? rows : []) as T[];
   } else {
     const db = getSqliteDb();
     const stmt = db.prepare(sql);
@@ -70,8 +72,9 @@ export async function dbExec(sql: string, params: any[] = []): Promise<{ changes
     const sqlClient = getNeonClient();
     let paramIndex = 1;
     const pgSql = sql.replace(/\?/g, () => `$${paramIndex++}`);
-    const res = await sqlClient.query(pgSql, params, { fullResults: true });
-    const changes = res?.rowCount ?? (Array.isArray(res) ? res.length : 1);
+    // Use .query() for parameterised calls (tagged-template-only fn in new SDK)
+    const rows = await sqlClient.query(pgSql, params);
+    const changes = Array.isArray(rows) ? rows.length : 1;
     return { changes };
   } else {
     const db = getSqliteDb();
@@ -87,6 +90,8 @@ async function ensureInitialized() {
 
   if (isPostgres) {
     const sqlClient = getNeonClient();
+    // Run each DDL statement separately — neon HTTP client doesn't support
+    // multiple statements in one call. Use .query() for all calls (new SDK API).
     await sqlClient.query(`
       CREATE TABLE IF NOT EXISTS forms (
         id TEXT PRIMARY KEY,
@@ -99,11 +104,12 @@ async function ensureInitialized() {
         fields_count INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
-      );
+      )
+    `);
+    await sqlClient.query(`CREATE INDEX IF NOT EXISTS idx_forms_status ON forms(status)`);
+    await sqlClient.query(`CREATE INDEX IF NOT EXISTS idx_forms_form_id ON forms(form_id)`);
 
-      CREATE INDEX IF NOT EXISTS idx_forms_status ON forms(status);
-      CREATE INDEX IF NOT EXISTS idx_forms_form_id ON forms(form_id);
-
+    await sqlClient.query(`
       CREATE TABLE IF NOT EXISTS form_submissions (
         id TEXT PRIMARY KEY,
         form_id TEXT NOT NULL,
@@ -120,12 +126,13 @@ async function ensureInitialized() {
         updated_at TEXT NOT NULL,
         FOREIGN KEY (form_id) REFERENCES forms(form_id) ON DELETE CASCADE,
         UNIQUE(form_id, external_submission_id)
-      );
+      )
+    `);
+    await sqlClient.query(`CREATE INDEX IF NOT EXISTS idx_submissions_form_id ON form_submissions(form_id)`);
+    await sqlClient.query(`CREATE INDEX IF NOT EXISTS idx_submissions_submitted_at ON form_submissions(submitted_at)`);
+    await sqlClient.query(`CREATE INDEX IF NOT EXISTS idx_submissions_status ON form_submissions(status)`);
 
-      CREATE INDEX IF NOT EXISTS idx_submissions_form_id ON form_submissions(form_id);
-      CREATE INDEX IF NOT EXISTS idx_submissions_submitted_at ON form_submissions(submitted_at);
-      CREATE INDEX IF NOT EXISTS idx_submissions_status ON form_submissions(status);
-
+    await sqlClient.query(`
       CREATE TABLE IF NOT EXISTS webhook_logs (
         id TEXT PRIMARY KEY,
         form_id TEXT,
@@ -139,24 +146,28 @@ async function ensureInitialized() {
         ip TEXT,
         user_agent TEXT,
         created_at TEXT NOT NULL
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_logs_form_id ON webhook_logs(form_id);
-      CREATE INDEX IF NOT EXISTS idx_logs_status ON webhook_logs(status);
-      CREATE INDEX IF NOT EXISTS idx_logs_created_at ON webhook_logs(created_at);
+      )
     `);
+    await sqlClient.query(`CREATE INDEX IF NOT EXISTS idx_logs_form_id ON webhook_logs(form_id)`);
+    await sqlClient.query(`CREATE INDEX IF NOT EXISTS idx_logs_status ON webhook_logs(status)`);
+    await sqlClient.query(`CREATE INDEX IF NOT EXISTS idx_logs_created_at ON webhook_logs(created_at)`);
 
-    // Always ensure default forms exist in Postgres
+    // Seed default forms (idempotent)
     const now = new Date().toISOString();
-    await sqlClient.query(`
-      INSERT INTO forms (id, form_id, name, description, sheet_url, form_url, status, fields_count, created_at, updated_at)
-      VALUES 
-        ('1', 'class-of-1990-electoral', 'CLASS OF 1990 - ELECTORAL COMMITTEE APPLICATION FORM', 'Application form for electoral committee positions.', 'https://docs.google.com/spreadsheets/d/1v5DW23IHEmCI553iCmcjqVJGDHShNGHs1qitFt6uDnA/edit', 'https://docs.google.com/forms/d/e/1FAIpQLSfrNXCyayrL8lLUCsIc69LvWyyH9MI6Iyx1EEXOE1RkX6jmxQ/viewform', 'Active', 15, '${now}', '${now}'),
-        ('2', 'the-great-survey', 'The Great Survey', 'Annual member survey', NULL, NULL, 'Active', 1, '${now}', '${now}'),
-        ('3', 'the-great-survey-pt-2', 'The Great Survey pt.2', 'Follow up survey', NULL, NULL, 'Inactive', 1, '${now}', '${now}'),
-        ('4', 'new-features', 'New Features', 'Feedback on upcoming portal features', NULL, NULL, 'Active', 5, '${now}', '${now}')
-      ON CONFLICT (form_id) DO NOTHING;
-    `);
+    const seedRows = [
+      ['1', 'class-of-1990-electoral', 'CLASS OF 1990 - ELECTORAL COMMITTEE APPLICATION FORM', 'Application form for electoral committee positions.', 'https://docs.google.com/spreadsheets/d/1v5DW23IHEmCI553iCmcjqVJGDHShNGHs1qitFt6uDnA/edit', 'https://docs.google.com/forms/d/e/1FAIpQLSfrNXCyayrL8lLUCsIc69LvWyyH9MI6Iyx1EEXOE1RkX6jmxQ/viewform', 'Active', 15],
+      ['2', 'the-great-survey', 'The Great Survey', 'Annual member survey', null, null, 'Active', 1],
+      ['3', 'the-great-survey-pt-2', 'The Great Survey pt.2', 'Follow up survey', null, null, 'Inactive', 1],
+      ['4', 'new-features', 'New Features', 'Feedback on upcoming portal features', null, null, 'Active', 5],
+    ];
+    for (const [id, formId, name, description, sheetUrl, formUrl, status, fieldsCount] of seedRows) {
+      await sqlClient.query(
+        `INSERT INTO forms (id, form_id, name, description, sheet_url, form_url, status, fields_count, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         ON CONFLICT (form_id) DO NOTHING`,
+        [id, formId, name, description, sheetUrl, formUrl, status, fieldsCount, now, now]
+      );
+    }
 
   } else {
     const db = getSqliteDb();
