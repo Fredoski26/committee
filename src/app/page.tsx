@@ -200,14 +200,14 @@ export default function DashboardPage() {
             {currentTab === 'forms' && 'My Forms'}
             {currentTab === 'responses' && 'Form Responses'}
             {currentTab === 'analytics' && 'Analytics & Performance'}
-            {currentTab === 'integration' && 'Integration & Webhook Hub'}
+            {currentTab === 'integration' && 'Settings'}
           </h1>
           <p className="text-sm font-medium text-slate-500 mt-1">
             {currentTab === 'dashboard' && 'Overview of your forms and submissions'}
             {currentTab === 'forms' && 'Manage all connected Google Forms and sync parameters'}
             {currentTab === 'responses' && 'Browse, search, review and export dynamic form submissions'}
             {currentTab === 'analytics' && 'Deep dive into candidate distributions and submission trends'}
-            {currentTab === 'integration' && 'Google Sheets & Apps Script real-time webhook status'}
+            {currentTab === 'integration' && 'Google Sheets & Apps Script setup guide, credentials, and delivery logs'}
           </p>
         </div>
 
