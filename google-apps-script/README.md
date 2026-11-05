@@ -22,11 +22,11 @@ This guide walks you through connecting your **CLASS OF 1990 - ELECTORAL COMMITT
 2. Copy the entire contents of `google-apps-script/Code.gs` and paste it into `Code.gs`.
 3. Click the **Save** icon (diskette icon) or press `Ctrl + S` / `Cmd + S`.
 
-### Step 3: Configure Script Properties (Recommended)
+### Step 3: Configure Script Properties (Required)
 1. In the Apps Script left sidebar, click the **Project Settings** (gear icon ⚙️).
 2. Scroll down to **Script Properties** and click **Add script property**.
-3. Add the following key-value pairs:
-   - `WEBHOOK_URL`: Your server URL, e.g. `https://your-public-domain.com/api/webhooks/google-forms` (or your ngrok URL for local development: `https://xxxx.ngrok-free.app/api/webhooks/google-forms`).
+3. Add all four of the following key-value pairs — **all are required**, the script will throw an error if any are missing:
+   - `WEBHOOK_URL`: `https://committee-psi.vercel.app/api/webhooks/google-forms`
    - `WEBHOOK_SECRET`: `gforms_sec_7f9a8d4c2b1e0f3a5e8c`
    - `FORM_ID`: `class-of-1990-electoral`
    - `FORM_NAME`: `CLASS OF 1990 - ELECTORAL COMMITTEE APPLICATION FORM`
