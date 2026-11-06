@@ -168,9 +168,6 @@ async function ensureInitialized() {
     const now = new Date().toISOString();
     const seedRows = [
       ['1', 'class-of-1990-electoral', 'CLASS OF 1990 - ELECTORAL COMMITTEE APPLICATION FORM', 'Application form for electoral committee positions.', 'https://docs.google.com/spreadsheets/d/1v5DW23IHEmCI553iCmcjqVJGDHShNGHs1qitFt6uDnA/edit', 'https://docs.google.com/forms/d/e/1FAIpQLSfrNXCyayrL8lLUCsIc69LvWyyH9MI6Iyx1EEXOE1RkX6jmxQ/viewform', 'Active', 15],
-      ['2', 'the-great-survey', 'The Great Survey', 'Annual member survey', null, null, 'Active', 1],
-      ['3', 'the-great-survey-pt-2', 'The Great Survey pt.2', 'Follow up survey', null, null, 'Inactive', 1],
-      ['4', 'new-features', 'New Features', 'Feedback on upcoming portal features', null, null, 'Active', 5],
     ];
     for (const [id, formId, name, description, sheetUrl, formUrl, status, fieldsCount] of seedRows) {
       await pool.query(
@@ -249,9 +246,6 @@ async function ensureInitialized() {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     insert.run('1', 'class-of-1990-electoral', 'CLASS OF 1990 - ELECTORAL COMMITTEE APPLICATION FORM', 'Application form for electoral committee positions.', 'https://docs.google.com/spreadsheets/d/1v5DW23IHEmCI553iCmcjqVJGDHShNGHs1qitFt6uDnA/edit', 'https://docs.google.com/forms/d/e/1FAIpQLSfrNXCyayrL8lLUCsIc69LvWyyH9MI6Iyx1EEXOE1RkX6jmxQ/viewform', 'Active', 15, now, now);
-    insert.run('2', 'the-great-survey', 'The Great Survey', 'Annual member survey', null, null, 'Active', 1, now, now);
-    insert.run('3', 'the-great-survey-pt-2', 'The Great Survey pt.2', 'Follow up survey', null, null, 'Inactive', 1, now, now);
-    insert.run('4', 'new-features', 'New Features', 'Feedback on upcoming portal features', null, null, 'Active', 5, now, now);
   }
 
   isInitialized = true;
